@@ -1,0 +1,17 @@
+#Data
+labels_front.csv
+
+#Folders
+selected_images
+
+#.pth_files
+last_model_ViT.pth
+Deploy/best_model_ViT.pth
+
+#onnex_data
+Deploy/model.onnx.data
+
+#Duplicated_file
+Deploy/export_onnx.py
+Deploy/Intermediate_fusion.ipynb
+Deploy/labels_front.csv

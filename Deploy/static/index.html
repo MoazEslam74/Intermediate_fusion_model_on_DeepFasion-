@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepFashion Classifier</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, sans-serif;
+    background: #f5f5f5;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 520px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+
+  h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .subtitle { color: #888; font-size: 0.875rem; margin-bottom: 1.5rem; }
+
+  .upload-area {
+    border: 2px dashed #d0d0d0;
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    margin-bottom: 1rem;
+  }
+  .upload-area:hover { border-color: #555; }
+  .upload-area.has-image { border-style: solid; border-color: #333; padding: 0; overflow: hidden; }
+
+  #preview {
+    width: 100%;
+    max-height: 280px;
+    object-fit: cover;
+    border-radius: 10px;
+    display: none;
+  }
+
+  .upload-hint { color: #aaa; font-size: 0.875rem; pointer-events: none; }
+  .upload-hint span { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
+
+  input[type="file"] { display: none; }
+
+  label.field-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #555;
+    margin-bottom: 0.4rem;
+    margin-top: 1rem;
+  }
+
+  textarea {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 72px;
+    font-family: inherit;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { outline: none; border-color: #333; }
+
+  button#predictBtn {
+    width: 100%;
+    margin-top: 1.25rem;
+    padding: 0.75rem;
+    background: #111;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  button#predictBtn:hover { opacity: 0.85; }
+  button#predictBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #results { margin-top: 1.5rem; }
+
+  .result-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 0.75rem;
+  }
+
+  .result-label {
+    width: 160px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .bar-track {
+    flex: 1;
+    background: #f0f0f0;
+    border-radius: 99px;
+    height: 8px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: #111;
+    transition: width 0.6s ease;
+  }
+
+  .result-pct {
+    width: 44px;
+    text-align: right;
+    font-size: 0.875rem;
+    color: #555;
+    flex-shrink: 0;
+  }
+
+  .top-result {
+    background: #f9f9f9;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    display: none;
+  }
+  .top-result .label { font-size: 0.8rem; color: #888; }
+  .top-result .value { font-size: 1.3rem; font-weight: 600; margin-top: 2px; }
+
+  #error {
+    color: #c0392b;
+    font-size: 0.875rem;
+    margin-top: 1rem;
+    display: none;
+  }
+
+  .spinner {
+    display: none;
+    text-align: center;
+    padding: 1rem 0;
+    color: #888;
+    font-size: 0.875rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>DeepFashion Classifier</h1>
+  <p class="subtitle">Upload a fashion image and optionally describe it</p>
+
+  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+    <img id="preview" alt="preview">
+    <div class="upload-hint" id="uploadHint">
+      <span>🖼️</span>
+      Click to upload an image
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*">
+
+  <label class="field-label" for="captionInput">Caption (optional)</label>
+  <textarea id="captionInput" placeholder="e.g. A blue floral dress with short sleeves..."></textarea>
+
+  <button id="predictBtn" disabled>Classify</button>
+
+  <div class="spinner" id="spinner">Classifying...</div>
+  <div id="error"></div>
+
+  <div id="results">
+    <div class="top-result" id="topResult">
+      <div class="label">Top prediction</div>
+      <div class="value" id="topLabel">—</div>
+    </div>
+    <div id="barChart"></div>
+  </div>
+</div>
+
+<script>
+  const fileInput   = document.getElementById("fileInput");
+  const uploadArea  = document.getElementById("uploadArea");
+  const preview     = document.getElementById("preview");
+  const uploadHint  = document.getElementById("uploadHint");
+  const predictBtn  = document.getElementById("predictBtn");
+  const captionInput= document.getElementById("captionInput");
+  const spinner     = document.getElementById("spinner");
+  const errorDiv    = document.getElementById("error");
+  const topResult   = document.getElementById("topResult");
+  const topLabel    = document.getElementById("topLabel");
+  const barChart    = document.getElementById("barChart");
+
+  let selectedFile = null;
+
+  fileInput.addEventListener("change", (e) => {
+    selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+
+    const url = URL.createObjectURL(selectedFile);
+    preview.src = url;
+    preview.style.display = "block";
+    uploadHint.style.display = "none";
+    uploadArea.classList.add("has-image");
+    predictBtn.disabled = false;
+  });
+
+  predictBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    predictBtn.disabled = true;
+    spinner.style.display = "block";
+    errorDiv.style.display = "none";
+    topResult.style.display = "none";
+    barChart.innerHTML = "";
+
+    const formData = new FormData();
+    formData.append("image",   selectedFile);
+    formData.append("caption", captionInput.value.trim());
+
+    try {
+      const res  = await fetch("/predict", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+
+      topLabel.textContent      = data.predictions[0].class.replace("_", " ");
+      topResult.style.display   = "block";
+
+      barChart.innerHTML = data.predictions.map(p => `
+        <div class="result-item">
+          <div class="result-label">${p.class.replace("_", " ")}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: ${p.confidence}%"></div>
+          </div>
+          <div class="result-pct">${p.confidence}%</div>
+        </div>
+      `).join("");
+
+    } catch (err) {
+      errorDiv.textContent    = "Prediction failed: " + err.message;
+      errorDiv.style.display  = "block";
+    } finally {
+      spinner.style.display  = "none";
+      predictBtn.disabled    = false;
+    }
+  });
+</script>
+</body>
+</html>
